@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "release/**"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -39,3 +44,13 @@ jobs:
         with:
           name: sale-mobile-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Commit APK to repository
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/sale-mobile-debug.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add release/sale-mobile-debug.apk
+          git diff --cached --quiet || git commit -m "Add debug APK [skip ci]"
+          git push
