@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
     private EditText rentInput;
     private LinearLayout salesList;
     private LinearLayout journalList;
+    private Button saveRentButton;
     private Button addButton;
     private Button closeButton;
 
@@ -65,8 +66,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(248, 250, 252));
         scrollView.addView(root);
 
-        TextView title = label("Прибыль продаж", 26, true);
-        root.addView(title);
+        root.addView(label("Прибыль продаж", 26, true));
 
         shiftTitle = label("", 18, true);
         shiftTitle.setPadding(0, dp(14), 0, 0);
@@ -75,16 +75,23 @@ public class MainActivity extends Activity {
         statusText = label("", 15, false);
         root.addView(statusText);
 
+        LinearLayout rentSection = section();
+        rentSection.addView(label("Аренда за смену", 20, true));
+        rentInput = input("Ежедневная аренда", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        rentSection.addView(rentInput);
+        saveRentButton = button("Сохранить аренду", Color.rgb(37, 99, 235));
+        saveRentButton.setOnClickListener(v -> saveRent());
+        rentSection.addView(saveRentButton);
+        root.addView(rentSection);
+
         LinearLayout form = section();
         form.addView(label("Новая продажа", 20, true));
         nameInput = input("Наименование", InputType.TYPE_CLASS_TEXT);
         purchaseInput = input("Закуп", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         saleInput = input("Цена продажи", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        rentInput = input("Ежедневная аренда", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(nameInput);
         form.addView(purchaseInput);
         form.addView(saleInput);
-        form.addView(rentInput);
 
         addButton = button("Добавить продажу", Color.rgb(37, 99, 235));
         addButton.setOnClickListener(v -> addSale());
@@ -117,9 +124,40 @@ public class MainActivity extends Activity {
         setContentView(scrollView);
     }
 
+    private void saveRent() {
+        if (currentShift.optBoolean("closed", false)) {
+            show("Смена уже закрыта");
+            return;
+        }
+        if (isRentSet(currentShift)) {
+            show("Аренда уже сохранена для этой смены");
+            return;
+        }
+
+        Double rent = parseMoney(rentInput);
+        if (rent == null) {
+            show("Введите ежедневную аренду");
+            return;
+        }
+
+        try {
+            currentShift.put("rent", rent);
+            currentShift.put("rentSet", true);
+            saveData();
+            render();
+            show("Аренда сохранена");
+        } catch (JSONException e) {
+            show("Не удалось сохранить аренду");
+        }
+    }
+
     private void addSale() {
         if (currentShift.optBoolean("closed", false)) {
             show("Смена уже закрыта");
+            return;
+        }
+        if (!isRentSet(currentShift)) {
+            show("Сначала сохраните аренду за смену");
             return;
         }
 
@@ -161,16 +199,14 @@ public class MainActivity extends Activity {
             show("Смена уже закрыта");
             return;
         }
-
-        Double rent = parseMoney(rentInput);
-        if (rent == null) {
-            show("Введите ежедневную аренду");
+        if (!isRentSet(currentShift)) {
+            show("Сначала сохраните аренду за смену");
             return;
         }
 
         try {
+            double rent = currentShift.optDouble("rent", 0);
             Totals totals = calculateTotals(currentShift, rent);
-            currentShift.put("rent", rent);
             currentShift.put("grossProfit", totals.grossProfit);
             currentShift.put("netProfit", totals.netProfit);
             currentShift.put("sellerSalary", totals.sellerSalary);
@@ -187,18 +223,20 @@ public class MainActivity extends Activity {
     private void render() {
         String date = currentShift.optString("date", today());
         boolean closed = currentShift.optBoolean("closed", false);
-        double rent = currentShift.optDouble("rent", parseMoney(rentInput, 0));
+        boolean rentSet = isRentSet(currentShift);
+        double rent = currentShift.optDouble("rent", 0);
         Totals totals = calculateTotals(currentShift, rent);
 
         shiftTitle.setText("Смена: " + date);
         statusText.setText(closed ? "Статус: закрыта" : "Статус: открыта");
-        rentInput.setText(rent > 0 ? formatPlain(rent) : "");
-        rentInput.setEnabled(!closed);
-        addButton.setEnabled(!closed);
-        closeButton.setEnabled(!closed);
+        rentInput.setText(rentSet ? formatPlain(rent) : "");
+        rentInput.setEnabled(!closed && !rentSet);
+        saveRentButton.setEnabled(!closed && !rentSet);
+        addButton.setEnabled(!closed && rentSet);
+        closeButton.setEnabled(!closed && rentSet);
 
         String totalMessage = "Прибыль продаж: " + money(totals.grossProfit)
-                + "\nАренда: " + money(rent)
+                + "\nАренда: " + (rentSet ? money(rent) : "не сохранена")
                 + "\nИтог после аренды: " + money(totals.netProfit)
                 + "\nЗарплата продавца 60%: " + money(totals.sellerSalary);
         if (closed) {
@@ -240,7 +278,7 @@ public class MainActivity extends Activity {
         for (int i = shifts.length() - 1; i >= 0; i--) {
             JSONObject shift = shifts.optJSONObject(i);
             if (shift == null) continue;
-            double rent = shift.optDouble("rent", 0);
+            double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
             Totals totals = calculateTotals(shift, rent);
             String status = shift.optBoolean("closed", false) ? "закрыта" : "открыта";
             JSONArray sales = shift.optJSONArray("sales");
@@ -249,7 +287,7 @@ public class MainActivity extends Activity {
                     shift.optString("date") + " - " + status,
                     "Продаж: " + salesCount
                             + " | Прибыль: " + money(totals.grossProfit)
-                            + " | Аренда: " + money(rent)
+                            + " | Аренда: " + (isRentSet(shift) ? money(rent) : "не сохранена")
                             + " | Зарплата: " + money(totals.sellerSalary)
             ));
         }
@@ -278,6 +316,7 @@ public class MainActivity extends Activity {
         try {
             currentShift.put("date", today);
             currentShift.put("rent", 0);
+            currentShift.put("rentSet", false);
             currentShift.put("closed", false);
             currentShift.put("sales", new JSONArray());
             shifts.put(currentShift);
@@ -288,6 +327,10 @@ public class MainActivity extends Activity {
 
     private void saveData() {
         prefs.edit().putString(SHIFTS_KEY, shifts.toString()).apply();
+    }
+
+    private boolean isRentSet(JSONObject shift) {
+        return shift.optBoolean("rentSet", shift.optBoolean("closed", false) || shift.optDouble("rent", 0) > 0);
     }
 
     private Totals calculateTotals(JSONObject shift, double rent) {
@@ -313,11 +356,6 @@ public class MainActivity extends Activity {
         } catch (NumberFormatException e) {
             return null;
         }
-    }
-
-    private double parseMoney(EditText input, double fallback) {
-        Double value = parseMoney(input);
-        return value == null ? fallback : value;
     }
 
     private String today() {
