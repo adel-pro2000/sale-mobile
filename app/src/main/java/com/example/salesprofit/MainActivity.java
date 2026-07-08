@@ -1,8 +1,10 @@
 package com.example.salesprofit;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -18,6 +20,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -26,6 +31,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final String PREFS = "sales_profit_prefs";
     private static final String SHIFTS_KEY = "shifts";
+    private static final int CREATE_EXCEL_FILE_REQUEST = 1001;
     private static final double SELLER_PERCENT = 0.60;
 
     private final Locale ruLocale = new Locale("ru", "RU");
@@ -47,6 +53,8 @@ public class MainActivity extends Activity {
     private Button saveRentButton;
     private Button addButton;
     private Button closeButton;
+    private Button reopenButton;
+    private Button exportButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,6 +113,12 @@ public class MainActivity extends Activity {
         closeButton = button("Закрыть смену", Color.rgb(22, 163, 74));
         closeButton.setOnClickListener(v -> closeShift());
         totals.addView(closeButton);
+        reopenButton = button("Открыть смену обратно", Color.rgb(234, 88, 12));
+        reopenButton.setOnClickListener(v -> reopenShift());
+        totals.addView(reopenButton);
+        exportButton = button("Выгрузить историю в Excel", Color.rgb(15, 118, 110));
+        exportButton.setOnClickListener(v -> exportHistory());
+        totals.addView(exportButton);
         root.addView(totals);
 
         LinearLayout currentSales = section();
@@ -220,6 +234,58 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void reopenShift() {
+        if (!currentShift.optBoolean("closed", false)) {
+            show("Смена уже открыта");
+            return;
+        }
+
+        try {
+            currentShift.put("closed", false);
+            currentShift.remove("closedAt");
+            currentShift.remove("grossProfit");
+            currentShift.remove("netProfit");
+            currentShift.remove("sellerSalary");
+            saveData();
+            render();
+            show("Смена открыта обратно");
+        } catch (JSONException e) {
+            show("Не удалось открыть смену");
+        }
+    }
+
+    private void exportHistory() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/vnd.ms-excel");
+        intent.putExtra(Intent.EXTRA_TITLE, "sales-history-" + new SimpleDateFormat("ddMMyyyy-HHmm", ruLocale).format(new Date()) + ".xls");
+        startActivityForResult(intent, CREATE_EXCEL_FILE_REQUEST);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == CREATE_EXCEL_FILE_REQUEST && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null) {
+                writeHistoryToExcel(uri);
+            }
+        }
+    }
+
+    private void writeHistoryToExcel(Uri uri) {
+        try (OutputStream outputStream = getContentResolver().openOutputStream(uri)) {
+            if (outputStream == null) {
+                show("Не удалось создать файл");
+                return;
+            }
+            outputStream.write(buildExcelHtml().getBytes(StandardCharsets.UTF_8));
+            show("История выгружена в Excel");
+        } catch (IOException e) {
+            show("Не удалось выгрузить историю");
+        }
+    }
+
     private void render() {
         String date = currentShift.optString("date", today());
         boolean closed = currentShift.optBoolean("closed", false);
@@ -234,6 +300,8 @@ public class MainActivity extends Activity {
         saveRentButton.setEnabled(!closed && !rentSet);
         addButton.setEnabled(!closed && rentSet);
         closeButton.setEnabled(!closed && rentSet);
+        reopenButton.setEnabled(closed);
+        exportButton.setEnabled(shifts.length() > 0);
 
         String totalMessage = "Прибыль продаж: " + money(totals.grossProfit)
                 + "\nАренда: " + (rentSet ? money(rent) : "не сохранена")
@@ -333,6 +401,86 @@ public class MainActivity extends Activity {
         return shift.optBoolean("rentSet", shift.optBoolean("closed", false) || shift.optDouble("rent", 0) > 0);
     }
 
+    private String buildExcelHtml() {
+        StringBuilder html = new StringBuilder();
+        html.append("<html><head><meta charset=\"UTF-8\"></head><body>");
+        html.append("<table border=\"1\">");
+        html.append("<tr>")
+                .append("<th>Дата смены</th>")
+                .append("<th>Статус</th>")
+                .append("<th>Время продажи</th>")
+                .append("<th>Наименование</th>")
+                .append("<th>Закуп</th>")
+                .append("<th>Цена продажи</th>")
+                .append("<th>Прибыль</th>")
+                .append("<th>Аренда смены</th>")
+                .append("<th>Итог после аренды</th>")
+                .append("<th>Зарплата продавца 60%</th>")
+                .append("</tr>");
+
+        for (int i = 0; i < shifts.length(); i++) {
+            JSONObject shift = shifts.optJSONObject(i);
+            if (shift == null) continue;
+            JSONArray sales = shift.optJSONArray("sales");
+            double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
+            Totals totals = calculateTotals(shift, rent);
+            String status = shift.optBoolean("closed", false) ? "закрыта" : "открыта";
+
+            if (sales == null || sales.length() == 0) {
+                appendExcelRow(html, shift, status, "", "", 0, 0, 0, rent, totals);
+                continue;
+            }
+
+            for (int j = 0; j < sales.length(); j++) {
+                JSONObject sale = sales.optJSONObject(j);
+                if (sale == null) continue;
+                appendExcelRow(
+                        html,
+                        shift,
+                        status,
+                        sale.optString("time", ""),
+                        sale.optString("name", ""),
+                        sale.optDouble("purchase", 0),
+                        sale.optDouble("sale", 0),
+                        sale.optDouble("profit", 0),
+                        rent,
+                        totals
+                );
+            }
+        }
+
+        html.append("</table></body></html>");
+        return html.toString();
+    }
+
+    private void appendExcelRow(StringBuilder html, JSONObject shift, String status, String time, String name,
+                                double purchase, double sale, double profit, double rent, Totals totals) {
+        html.append("<tr>")
+                .append(cell(shift.optString("date", "")))
+                .append(cell(status))
+                .append(cell(time))
+                .append(cell(name))
+                .append(cell(formatNumber(purchase)))
+                .append(cell(formatNumber(sale)))
+                .append(cell(formatNumber(profit)))
+                .append(cell(isRentSet(shift) ? formatNumber(rent) : "не сохранена"))
+                .append(cell(formatNumber(totals.netProfit)))
+                .append(cell(formatNumber(totals.sellerSalary)))
+                .append("</tr>");
+    }
+
+    private String cell(String value) {
+        return "<td>" + escapeHtml(value) + "</td>";
+    }
+
+    private String escapeHtml(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
+    }
+
     private Totals calculateTotals(JSONObject shift, double rent) {
         JSONArray sales = shift.optJSONArray("sales");
         double gross = 0;
@@ -364,6 +512,13 @@ public class MainActivity extends Activity {
 
     private String money(double value) {
         return moneyFormat.format(value);
+    }
+
+    private String formatNumber(double value) {
+        if (value == Math.rint(value)) {
+            return String.valueOf((long) value);
+        }
+        return String.format(Locale.US, "%.2f", value);
     }
 
     private String formatPlain(double value) {
