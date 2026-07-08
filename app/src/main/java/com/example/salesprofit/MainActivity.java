@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private EditText rentInput;
     private LinearLayout salesList;
     private LinearLayout journalList;
+    private TextView addSaleHint;
     private Button saveRentButton;
     private Button addButton;
     private Button closeButton;
@@ -94,6 +95,8 @@ public class MainActivity extends Activity {
 
         LinearLayout form = section();
         form.addView(label("Новая продажа", 20, true));
+        addSaleHint = warning("Сначала введите и сохраните ежедневную аренду");
+        form.addView(addSaleHint);
         nameInput = input("Наименование", InputType.TYPE_CLASS_TEXT);
         purchaseInput = input("Закуп", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         saleInput = input("Цена продажи", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
@@ -302,6 +305,7 @@ public class MainActivity extends Activity {
         closeButton.setEnabled(!closed && rentSet);
         reopenButton.setEnabled(closed);
         exportButton.setEnabled(shifts.length() > 0);
+        addSaleHint.setVisibility(!closed && !rentSet ? View.VISIBLE : View.GONE);
 
         String totalMessage = "Прибыль продаж: " + money(totals.grossProfit)
                 + "\nАренда: " + (rentSet ? money(rent) : "не сохранена")
@@ -541,6 +545,20 @@ public class MainActivity extends Activity {
     private TextView muted(String text) {
         TextView view = label(text, 15, false);
         view.setTextColor(Color.rgb(100, 116, 139));
+        return view;
+    }
+
+    private TextView warning(String text) {
+        TextView view = label(text, 15, true);
+        view.setTextColor(Color.rgb(180, 83, 9));
+        view.setBackgroundColor(Color.rgb(255, 251, 235));
+        view.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(8), 0, dp(8));
+        view.setLayoutParams(params);
         return view;
     }
 
