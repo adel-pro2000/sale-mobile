@@ -1,0 +1,141 @@
+﻿diff --git a/app/build.gradle b/app/build.gradle
+index 448083a..d36e1e7 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -19,8 +19,8 @@ android {
+         applicationId "com.example.salesprofit"
+         minSdk 23
+         targetSdk 35
+-        versionCode 3
+-        versionName "1.1.1"
++        versionCode 4
++        versionName "1.2"
+     }
+ 
+     buildTypes {
+diff --git a/app/src/main/java/com/example/salesprofit/MainActivity.java b/app/src/main/java/com/example/salesprofit/MainActivity.java
+index 93ec540..002325e 100644
+--- a/app/src/main/java/com/example/salesprofit/MainActivity.java
++++ b/app/src/main/java/com/example/salesprofit/MainActivity.java
+@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
+     private JSONArray shifts;
+     private JSONObject currentShift;
+     private int editingSaleIndex = -1;
++    private int pendingExcelShiftIndex = -1;
+     private final Set<String> expandedJournalShifts = new HashSet<>();
+ 
+     private TextView shiftTitle;
+@@ -322,6 +323,7 @@ public class MainActivity extends Activity {
+     }
+ 
+     private void exportHistory() {
++        pendingExcelShiftIndex = -1;
+         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+         intent.addCategory(Intent.CATEGORY_OPENABLE);
+         intent.setType("application/vnd.ms-excel");
+@@ -329,10 +331,36 @@ public class MainActivity extends Activity {
+         startActivityForResult(intent, CREATE_EXCEL_FILE_REQUEST);
+     }
+ 
++    private void exportShift(int shiftIndex) {
++        JSONObject shift = shifts.optJSONObject(shiftIndex);
++        if (shift == null) {
++            show("Смена не найдена");
++            return;
++        }
++        pendingExcelShiftIndex = shiftIndex;
++        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
++        intent.addCategory(Intent.CATEGORY_OPENABLE);
++        intent.setType("application/vnd.ms-excel");
++        intent.putExtra(Intent.EXTRA_TITLE, "sales-shift-" + shift.optString("date", today()).replace(".", "") + ".xls");
++        startActivityForResult(intent, CREATE_EXCEL_FILE_REQUEST);
++    }
++
+     private void shareJournalText() {
++        shareJournalTextFor(-1);
++    }
++
++    private void shareShiftJournalText(int shiftIndex) {
++        if (shifts.optJSONObject(shiftIndex) == null) {
++            show("Смена не найдена");
++            return;
++        }
++        shareJournalTextFor(shiftIndex);
++    }
++
++    private void shareJournalTextFor(int shiftIndex) {
+         Intent intent = new Intent(Intent.ACTION_SEND);
+         intent.setType("text/plain");
+-        intent.putExtra(Intent.EXTRA_TEXT, buildJournalText());
++        intent.putExtra(Intent.EXTRA_TEXT, buildJournalText(shiftIndex));
+         intent.putExtra(Intent.EXTRA_SUBJECT, "Журнал продаж");
+ 
+         Intent telegramIntent = new Intent(intent);
+@@ -352,6 +380,8 @@ public class MainActivity extends Activity {
+             if (uri != null) {
+                 writeHistoryToExcel(uri);
+             }
++        } else if (requestCode == CREATE_EXCEL_FILE_REQUEST) {
++            pendingExcelShiftIndex = -1;
+         }
+     }
+ 
+@@ -361,9 +391,11 @@ public class MainActivity extends Activity {
+                 show("Не удалось создать файл");
+                 return;
+             }
+-            outputStream.write(buildExcelHtml().getBytes(StandardCharsets.UTF_8));
++            outputStream.write(buildExcelHtml(pendingExcelShiftIndex).getBytes(StandardCharsets.UTF_8));
++            pendingExcelShiftIndex = -1;
+             show("Журнал продаж выгружен в Excel");
+         } catch (IOException e) {
++            pendingExcelShiftIndex = -1;
+             show("Не удалось выгрузить журнал продаж");
+         }
+     }
+@@ -542,10 +574,12 @@ public class MainActivity extends Activity {
+         return shift.optBoolean("rentSet", shift.optBoolean("closed", false) || shift.optDouble("rent", 0) > 0);
+     }
+ 
+-    private String buildExcelHtml() {
++    private String buildExcelHtml(int shiftIndex) {
+         StringBuilder html = new StringBuilder();
+         html.append("<html><head><meta charset=\"UTF-8\"></head><body>");
+-        for (int i = 0; i < shifts.length(); i++) {
++        int start = shiftIndex >= 0 ? shiftIndex : 0;
++        int end = shiftIndex >= 0 ? shiftIndex + 1 : shifts.length();
++        for (int i = start; i < end; i++) {
+             JSONObject shift = shifts.optJSONObject(i);
+             if (shift == null) continue;
+             JSONArray sales = shift.optJSONArray("sales");
+@@ -603,10 +637,12 @@ public class MainActivity extends Activity {
+                 .append("</tr>");
+     }
+ 
+-    private CharSequence buildJournalText() {
++    private CharSequence buildJournalText(int shiftIndex) {
+         SpannableStringBuilder text = new SpannableStringBuilder();
+ 
+-        for (int i = 0; i < shifts.length(); i++) {
++        int start = shiftIndex >= 0 ? shiftIndex : 0;
++        int end = shiftIndex >= 0 ? shiftIndex + 1 : shifts.length();
++        for (int i = start; i < end; i++) {
+             JSONObject shift = shifts.optJSONObject(i);
+             if (shift == null) continue;
+             JSONArray sales = shift.optJSONArray("sales");
+@@ -843,6 +879,15 @@ public class MainActivity extends Activity {
+ 
+         layout.addView(titleView);
+         layout.addView(summaryView);
++
++        Button exportShiftButton = button("Excel по этой смене", Color.rgb(15, 118, 110));
++        exportShiftButton.setOnClickListener(v -> exportShift(shiftIndex));
++        layout.addView(exportShiftButton);
++
++        Button telegramShiftButton = button("Telegram по этой смене", Color.rgb(37, 99, 235));
++        telegramShiftButton.setOnClickListener(v -> shareShiftJournalText(shiftIndex));
++        layout.addView(telegramShiftButton);
++
+         layout.addView(toggleButton);
+ 
+         if (expanded) {
