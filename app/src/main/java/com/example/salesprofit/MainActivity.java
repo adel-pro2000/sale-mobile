@@ -542,7 +542,6 @@ public class MainActivity extends Activity {
 
     private String buildJournalText() {
         StringBuilder text = new StringBuilder();
-        text.append("Журнал продаж");
 
         for (int i = 0; i < shifts.length(); i++) {
             JSONObject shift = shifts.optJSONObject(i);
@@ -552,7 +551,12 @@ public class MainActivity extends Activity {
             double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
             Totals totals = calculateTotals(shift, rent);
 
-            text.append("\n\nДата смены: ").append(shift.optString("date", ""))
+            if (text.length() > 0) {
+                text.append("\n\n");
+            }
+
+            text.append("Итоги смены от ").append(shift.optString("date", ""))
+                    .append("\n\nДата смены: ").append(shift.optString("date", ""))
                     .append("\nАренда: ").append(isRentSet(shift) ? formatNumber(rent) : "не сохранена")
                     .append("\nКол-во продаж: ").append(salesCount)
                     .append("\nГрязная прибыль: ").append(formatNumber(totals.grossProfit))
@@ -560,18 +564,18 @@ public class MainActivity extends Activity {
                     .append("\nЗарплата продавца: ").append(formatNumber(totals.sellerSalary))
                     .append("\nОстаток после з/п продавца: ").append(formatNumber(totals.ownerRemainder))
                     .append("\n\nЖурнал продаж:")
-                    .append("\nДата: ").append(shift.optString("date", ""));
+                    .append("\n\nДата: ").append(shift.optString("date", ""))
+                    .append("\nвремя продажи | наименование | закуп | розница | прибыль");
 
             if (sales == null || sales.length() == 0) {
                 text.append("\nПродаж нет");
                 continue;
             }
 
-            text.append("\nвремя продажи | наименование | закуп | розница | прибыль");
             for (int j = 0; j < sales.length(); j++) {
                 JSONObject sale = sales.optJSONObject(j);
                 if (sale == null) continue;
-                text.append("\n")
+                text.append("\n\n• ")
                         .append(sale.optString("time", ""))
                         .append(" | ")
                         .append(sale.optString("name", ""))
