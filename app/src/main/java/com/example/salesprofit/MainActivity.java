@@ -40,6 +40,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private JSONArray shifts;
     private JSONObject currentShift;
+    private int editingSaleIndex = -1;
 
     private TextView shiftTitle;
     private TextView statusText;
@@ -53,6 +54,7 @@ public class MainActivity extends Activity {
     private TextView addSaleHint;
     private Button saveRentButton;
     private Button addButton;
+    private Button cancelEditButton;
     private Button closeButton;
     private Button reopenButton;
     private Button exportButton;
@@ -107,6 +109,9 @@ public class MainActivity extends Activity {
         addButton = button("Добавить продажу", Color.rgb(37, 99, 235));
         addButton.setOnClickListener(v -> addSale());
         form.addView(addButton);
+        cancelEditButton = button("Отменить редактирование", Color.rgb(100, 116, 139));
+        cancelEditButton.setOnClickListener(v -> cancelSaleEdit());
+        form.addView(cancelEditButton);
         root.addView(form);
 
         LinearLayout totals = section();
@@ -192,23 +197,67 @@ public class MainActivity extends Activity {
         }
 
         double profit = sale - purchase;
-        JSONObject item = new JSONObject();
         try {
+            boolean editing = editingSaleIndex >= 0;
+            JSONObject item = editingSaleIndex >= 0
+                    ? currentShift.getJSONArray("sales").getJSONObject(editingSaleIndex)
+                    : new JSONObject();
             item.put("name", name);
             item.put("purchase", purchase);
             item.put("sale", sale);
             item.put("profit", profit);
-            item.put("time", new SimpleDateFormat("HH:mm", ruLocale).format(new Date()));
-            currentShift.getJSONArray("sales").put(item);
+            if (editingSaleIndex < 0) {
+                item.put("time", new SimpleDateFormat("HH:mm", ruLocale).format(new Date()));
+                currentShift.getJSONArray("sales").put(item);
+            } else {
+                item.put("editedAt", new SimpleDateFormat("dd.MM.yyyy HH:mm", ruLocale).format(new Date()));
+            }
             saveData();
-            nameInput.setText("");
-            purchaseInput.setText("");
-            saleInput.setText("");
+            clearSaleForm();
             render();
-            show("Продажа добавлена");
+            show(editing ? "Продажа изменена" : "Продажа добавлена");
         } catch (JSONException e) {
             show("Не удалось сохранить продажу");
         }
+    }
+
+    private void startSaleEdit(int saleIndex) {
+        if (currentShift.optBoolean("closed", false)) {
+            show("Сначала откройте смену обратно");
+            return;
+        }
+
+        JSONArray sales = currentShift.optJSONArray("sales");
+        if (sales == null || saleIndex < 0 || saleIndex >= sales.length()) {
+            show("Продажа не найдена");
+            return;
+        }
+
+        JSONObject sale = sales.optJSONObject(saleIndex);
+        if (sale == null) {
+            show("Продажа не найдена");
+            return;
+        }
+
+        editingSaleIndex = saleIndex;
+        nameInput.setText(sale.optString("name", ""));
+        purchaseInput.setText(formatPlain(sale.optDouble("purchase", 0)));
+        saleInput.setText(formatPlain(sale.optDouble("sale", 0)));
+        render();
+        show("Измените данные и нажмите Сохранить изменения");
+    }
+
+    private void cancelSaleEdit() {
+        clearSaleForm();
+        render();
+        show("Редактирование отменено");
+    }
+
+    private void clearSaleForm() {
+        editingSaleIndex = -1;
+        nameInput.setText("");
+        purchaseInput.setText("");
+        saleInput.setText("");
     }
 
     private void closeShift() {
@@ -302,7 +351,9 @@ public class MainActivity extends Activity {
         rentInput.setEnabled(!closed && !rentSet);
         saveRentButton.setEnabled(!closed && !rentSet);
         addButton.setEnabled(!closed && rentSet);
-        closeButton.setEnabled(!closed && rentSet);
+        addButton.setText(editingSaleIndex >= 0 ? "Сохранить изменения" : "Добавить продажу");
+        cancelEditButton.setVisibility(editingSaleIndex >= 0 ? View.VISIBLE : View.GONE);
+        closeButton.setEnabled(!closed && rentSet && editingSaleIndex < 0);
         reopenButton.setEnabled(closed);
         exportButton.setEnabled(shifts.length() > 0);
         addSaleHint.setVisibility(!closed && !rentSet ? View.VISIBLE : View.GONE);
@@ -331,7 +382,8 @@ public class MainActivity extends Activity {
         for (int i = 0; i < sales.length(); i++) {
             JSONObject sale = sales.optJSONObject(i);
             if (sale == null) continue;
-            salesList.addView(row(
+            salesList.addView(saleRow(
+                    i,
                     sale.optString("time", "") + "  " + sale.optString("name", ""),
                     "Продажа: " + money(sale.optDouble("sale"))
                             + " | Закуп: " + money(sale.optDouble("purchase"))
@@ -619,6 +671,24 @@ public class MainActivity extends Activity {
         subtitleView.setTextColor(Color.rgb(71, 85, 105));
         layout.addView(titleView);
         layout.addView(subtitleView);
+        return layout;
+    }
+
+    private View saleRow(int saleIndex, String title, String subtitle) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(0, dp(8), 0, dp(8));
+
+        TextView titleView = label(title, 16, true);
+        TextView subtitleView = label(subtitle, 14, false);
+        subtitleView.setTextColor(Color.rgb(71, 85, 105));
+        Button editButton = button("Изменить", Color.rgb(100, 116, 139));
+        editButton.setEnabled(!currentShift.optBoolean("closed", false));
+        editButton.setOnClickListener(v -> startSaleEdit(saleIndex));
+
+        layout.addView(titleView);
+        layout.addView(subtitleView);
+        layout.addView(editButton);
         return layout;
     }
 
