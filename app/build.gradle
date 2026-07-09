@@ -6,11 +6,29 @@ android {
     namespace "com.example.salesprofit"
     compileSdk 35
 
+    signingConfigs {
+        release {
+            storeFile file("sales-profit.keystore")
+            storePassword "salesprofit2026"
+            keyAlias "salesprofit"
+            keyPassword "salesprofit2026"
+        }
+    }
+
     defaultConfig {
         applicationId "com.example.salesprofit"
         minSdk 23
         targetSdk 35
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.1.1"
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
+        release {
+            signingConfig signingConfigs.release
+        }
     }
 }

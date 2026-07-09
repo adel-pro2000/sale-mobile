@@ -1,0 +1,107 @@
+﻿diff --git a/README.md b/README.md
+index d549431..1e328a9 100644
+--- a/README.md
++++ b/README.md
+@@ -20,3 +20,5 @@
+ Откройте папку проекта в Android Studio и запустите приложение на телефоне или эмуляторе.
+ 
+ APK автоматически собирается через GitHub Actions после изменений в `main`.
++
++Если Android пишет, что приложение конфликтует с другим пакетом, удалите старую установку один раз и поставьте APK версии 1.1.1 или новее. Дальнейшие обновления будут ставиться поверх, потому что проект использует постоянный ключ подписи.
+diff --git a/app/build.gradle b/app/build.gradle
+index 4ac5aa8..448083a 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -6,11 +6,29 @@ android {
+     namespace "com.example.salesprofit"
+     compileSdk 35
+ 
++    signingConfigs {
++        release {
++            storeFile file("sales-profit.keystore")
++            storePassword "salesprofit2026"
++            keyAlias "salesprofit"
++            keyPassword "salesprofit2026"
++        }
++    }
++
+     defaultConfig {
+         applicationId "com.example.salesprofit"
+         minSdk 23
+         targetSdk 35
+-        versionCode 2
+-        versionName "1.1"
++        versionCode 3
++        versionName "1.1.1"
++    }
++
++    buildTypes {
++        debug {
++            signingConfig signingConfigs.release
++        }
++        release {
++            signingConfig signingConfigs.release
++        }
+     }
+ }
+diff --git a/app/sales-profit.keystore b/app/sales-profit.keystore
+new file mode 100644
+index 0000000000000000000000000000000000000000..21bb12f4904e2d4cd37359a971f9bf53e6143cdc
+GIT binary patch
+literal 2754
+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
+
+literal 0
+HcmV?d00001
+
