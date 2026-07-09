@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     private Button closeButton;
     private Button reopenButton;
     private Button exportButton;
+    private Button telegramButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -124,9 +125,12 @@ public class MainActivity extends Activity {
         reopenButton = button("Открыть смену обратно", Color.rgb(234, 88, 12));
         reopenButton.setOnClickListener(v -> reopenShift());
         totals.addView(reopenButton);
-        exportButton = button("Выгрузить историю в Excel", Color.rgb(15, 118, 110));
+        exportButton = button("Выгрузить журнал продаж в Excel", Color.rgb(15, 118, 110));
         exportButton.setOnClickListener(v -> exportHistory());
         totals.addView(exportButton);
+        telegramButton = button("Отправить журнал продаж в Telegram", Color.rgb(37, 99, 235));
+        telegramButton.setOnClickListener(v -> shareJournalText());
+        totals.addView(telegramButton);
         root.addView(totals);
 
         LinearLayout currentSales = section();
@@ -309,8 +313,23 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/vnd.ms-excel");
-        intent.putExtra(Intent.EXTRA_TITLE, "sales-history-" + new SimpleDateFormat("ddMMyyyy-HHmm", ruLocale).format(new Date()) + ".xls");
+        intent.putExtra(Intent.EXTRA_TITLE, "sales-journal-" + new SimpleDateFormat("ddMMyyyy-HHmm", ruLocale).format(new Date()) + ".xls");
         startActivityForResult(intent, CREATE_EXCEL_FILE_REQUEST);
+    }
+
+    private void shareJournalText() {
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, buildJournalText());
+        intent.putExtra(Intent.EXTRA_SUBJECT, "Журнал продаж");
+
+        Intent telegramIntent = new Intent(intent);
+        telegramIntent.setPackage("org.telegram.messenger");
+        try {
+            startActivity(telegramIntent);
+        } catch (Exception e) {
+            startActivity(Intent.createChooser(intent, "Отправить журнал продаж"));
+        }
     }
 
     @Override
@@ -331,9 +350,9 @@ public class MainActivity extends Activity {
                 return;
             }
             outputStream.write(buildExcelHtml().getBytes(StandardCharsets.UTF_8));
-            show("История выгружена в Excel");
+            show("Журнал продаж выгружен в Excel");
         } catch (IOException e) {
-            show("Не удалось выгрузить историю");
+            show("Не удалось выгрузить журнал продаж");
         }
     }
 
@@ -356,6 +375,7 @@ public class MainActivity extends Activity {
         closeButton.setEnabled(!closed && rentSet && editingSaleIndex < 0);
         reopenButton.setEnabled(closed);
         exportButton.setEnabled(shifts.length() > 0);
+        telegramButton.setEnabled(shifts.length() > 0);
         addSaleHint.setVisibility(!closed && !rentSet ? View.VISIBLE : View.GONE);
 
         String totalMessage = "Прибыль продаж: " + money(totals.grossProfit)
@@ -462,22 +482,67 @@ public class MainActivity extends Activity {
     private String buildExcelHtml() {
         StringBuilder html = new StringBuilder();
         html.append("<html><head><meta charset=\"UTF-8\"></head><body>");
-        html.append("<table border=\"1\">");
+        for (int i = 0; i < shifts.length(); i++) {
+            JSONObject shift = shifts.optJSONObject(i);
+            if (shift == null) continue;
+            JSONArray sales = shift.optJSONArray("sales");
+            int salesCount = sales == null ? 0 : sales.length();
+            double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
+            Totals totals = calculateTotals(shift, rent);
+
+            html.append("<table border=\"1\">");
+            html.append("<tr><th colspan=\"5\">Смена с итогами смены</th></tr>");
+            html.append(summaryExcelRow("Дата смены", shift.optString("date", "")));
+            html.append(summaryExcelRow("Аренда", isRentSet(shift) ? formatNumber(rent) : "не сохранена"));
+            html.append(summaryExcelRow("Кол-во продаж", String.valueOf(salesCount)));
+            html.append(summaryExcelRow("Грязная прибыль", formatNumber(totals.grossProfit)));
+            html.append(summaryExcelRow("Чистая выручка", formatNumber(totals.netProfit)));
+            html.append(summaryExcelRow("Зарплата продавца", formatNumber(totals.sellerSalary)));
+            html.append(summaryExcelRow("Остаток после з/п продавца", formatNumber(totals.ownerRemainder)));
+            html.append("<tr><th colspan=\"5\">Журнал продаж</th></tr>");
+            html.append("<tr>")
+                    .append("<th>Время продажи</th>")
+                    .append("<th>Наименование</th>")
+                    .append("<th>Закуп</th>")
+                    .append("<th>Розница</th>")
+                    .append("<th>Прибыль</th>")
+                    .append("</tr>");
+
+            if (sales == null || sales.length() == 0) {
+                html.append("<tr><td colspan=\"5\">Продаж нет</td></tr>");
+                html.append("</table><br/>");
+                continue;
+            }
+
+            for (int j = 0; j < sales.length(); j++) {
+                JSONObject sale = sales.optJSONObject(j);
+                if (sale == null) continue;
+                appendExcelSaleRow(html, sale);
+            }
+            html.append("</table><br/>");
+        }
+
+        html.append("</body></html>");
+        return html.toString();
+    }
+
+    private String summaryExcelRow(String label, String value) {
+        return "<tr><td colspan=\"2\"><b>" + escapeHtml(label) + "</b></td><td colspan=\"3\">" + escapeHtml(value) + "</td></tr>";
+    }
+
+    private void appendExcelSaleRow(StringBuilder html, JSONObject sale) {
         html.append("<tr>")
-                .append("<th>Дата смены</th>")
-                .append("<th>Статус</th>")
-                .append("<th>Время продажи</th>")
-                .append("<th>Наименование</th>")
-                .append("<th>Закуп</th>")
-                .append("<th>Цена продажи</th>")
-                .append("<th>Прибыль</th>")
-                .append("<th>Аренда смены</th>")
-                .append("<th>Кол-во продаж</th>")
-                .append("<th>Грязная прибыль</th>")
-                .append("<th>Итог после аренды</th>")
-                .append("<th>Зарплата продавца 60%</th>")
-                .append("<th>Остаток после з/п продавца</th>")
+                .append(cell(sale.optString("time", "")))
+                .append(cell(sale.optString("name", "")))
+                .append(cell(formatNumber(sale.optDouble("purchase", 0))))
+                .append(cell(formatNumber(sale.optDouble("sale", 0))))
+                .append(cell(formatNumber(sale.optDouble("profit", 0))))
                 .append("</tr>");
+    }
+
+    private String buildJournalText() {
+        StringBuilder text = new StringBuilder();
+        text.append("Журнал продаж");
 
         for (int i = 0; i < shifts.length(); i++) {
             JSONObject shift = shifts.optJSONObject(i);
@@ -486,53 +551,40 @@ public class MainActivity extends Activity {
             int salesCount = sales == null ? 0 : sales.length();
             double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
             Totals totals = calculateTotals(shift, rent);
-            String status = shift.optBoolean("closed", false) ? "закрыта" : "открыта";
+
+            text.append("\n\nДата смены: ").append(shift.optString("date", ""))
+                    .append("\nАренда: ").append(isRentSet(shift) ? formatNumber(rent) : "не сохранена")
+                    .append("\nКол-во продаж: ").append(salesCount)
+                    .append("\nГрязная прибыль: ").append(formatNumber(totals.grossProfit))
+                    .append("\nЧистая выручка: ").append(formatNumber(totals.netProfit))
+                    .append("\nЗарплата продавца: ").append(formatNumber(totals.sellerSalary))
+                    .append("\nОстаток после з/п продавца: ").append(formatNumber(totals.ownerRemainder))
+                    .append("\n\nЖурнал продаж:")
+                    .append("\nДата: ").append(shift.optString("date", ""));
 
             if (sales == null || sales.length() == 0) {
-                appendExcelRow(html, shift, status, "", "", 0, 0, 0, rent, salesCount, totals);
+                text.append("\nПродаж нет");
                 continue;
             }
 
+            text.append("\nвремя продажи | наименование | закуп | розница | прибыль");
             for (int j = 0; j < sales.length(); j++) {
                 JSONObject sale = sales.optJSONObject(j);
                 if (sale == null) continue;
-                appendExcelRow(
-                        html,
-                        shift,
-                        status,
-                        sale.optString("time", ""),
-                        sale.optString("name", ""),
-                        sale.optDouble("purchase", 0),
-                        sale.optDouble("sale", 0),
-                        sale.optDouble("profit", 0),
-                        rent,
-                        salesCount,
-                        totals
-                );
+                text.append("\n")
+                        .append(sale.optString("time", ""))
+                        .append(" | ")
+                        .append(sale.optString("name", ""))
+                        .append(" | ")
+                        .append(formatNumber(sale.optDouble("purchase", 0)))
+                        .append(" | ")
+                        .append(formatNumber(sale.optDouble("sale", 0)))
+                        .append(" | ")
+                        .append(formatNumber(sale.optDouble("profit", 0)));
             }
         }
 
-        html.append("</table></body></html>");
-        return html.toString();
-    }
-
-    private void appendExcelRow(StringBuilder html, JSONObject shift, String status, String time, String name,
-                                double purchase, double sale, double profit, double rent, int salesCount, Totals totals) {
-        html.append("<tr>")
-                .append(cell(shift.optString("date", "")))
-                .append(cell(status))
-                .append(cell(time))
-                .append(cell(name))
-                .append(cell(formatNumber(purchase)))
-                .append(cell(formatNumber(sale)))
-                .append(cell(formatNumber(profit)))
-                .append(cell(isRentSet(shift) ? formatNumber(rent) : "не сохранена"))
-                .append(cell(String.valueOf(salesCount)))
-                .append(cell(formatNumber(totals.grossProfit)))
-                .append(cell(formatNumber(totals.netProfit)))
-                .append(cell(formatNumber(totals.sellerSalary)))
-                .append(cell(formatNumber(totals.ownerRemainder)))
-                .append("</tr>");
+        return text.toString();
     }
 
     private String cell(String value) {
