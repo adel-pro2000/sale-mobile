@@ -542,7 +542,6 @@ public class MainActivity extends Activity {
 
     private String buildJournalText() {
         StringBuilder text = new StringBuilder();
-        text.append("Журнал продаж");
 
         for (int i = 0; i < shifts.length(); i++) {
             JSONObject shift = shifts.optJSONObject(i);
@@ -552,39 +551,82 @@ public class MainActivity extends Activity {
             double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
             Totals totals = calculateTotals(shift, rent);
 
-            text.append("\n\nДата смены: ").append(shift.optString("date", ""))
-                    .append("\nАренда: ").append(isRentSet(shift) ? formatNumber(rent) : "не сохранена")
-                    .append("\nКол-во продаж: ").append(salesCount)
-                    .append("\nГрязная прибыль: ").append(formatNumber(totals.grossProfit))
-                    .append("\nЧистая выручка: ").append(formatNumber(totals.netProfit))
-                    .append("\nЗарплата продавца: ").append(formatNumber(totals.sellerSalary))
-                    .append("\nОстаток после з/п продавца: ").append(formatNumber(totals.ownerRemainder))
-                    .append("\n\nЖурнал продаж:")
-                    .append("\nДата: ").append(shift.optString("date", ""));
-
-            if (sales == null || sales.length() == 0) {
-                text.append("\nПродаж нет");
-                continue;
+            if (text.length() > 0) {
+                text.append("\n\n");
             }
-
-            text.append("\nвремя продажи | наименование | закуп | розница | прибыль");
-            for (int j = 0; j < sales.length(); j++) {
-                JSONObject sale = sales.optJSONObject(j);
-                if (sale == null) continue;
-                text.append("\n")
-                        .append(sale.optString("time", ""))
-                        .append(" | ")
-                        .append(sale.optString("name", ""))
-                        .append(" | ")
-                        .append(formatNumber(sale.optDouble("purchase", 0)))
-                        .append(" | ")
-                        .append(formatNumber(sale.optDouble("sale", 0)))
-                        .append(" | ")
-                        .append(formatNumber(sale.optDouble("profit", 0)));
-            }
+            appendSummaryTextTable(text, shift, rent, salesCount, totals);
+            text.append("\n");
+            appendSalesTextTable(text, shift, sales);
         }
 
         return text.toString();
+    }
+
+    private void appendSummaryTextTable(StringBuilder text, JSONObject shift, double rent, int salesCount, Totals totals) {
+        int labelWidth = 28;
+        int valueWidth = 14;
+        String border = "+" + repeat("-", labelWidth + 2) + "+" + repeat("-", valueWidth + 2) + "+";
+
+        text.append(border)
+                .append("\n| ").append(center("Смена с итогами смены", labelWidth + valueWidth + 5)).append(" |")
+                .append("\n").append(border)
+                .append("\n").append(summaryTextRow("Дата смены", shift.optString("date", ""), labelWidth, valueWidth))
+                .append("\n").append(summaryTextRow("Аренда", isRentSet(shift) ? formatNumber(rent) : "не сохранена", labelWidth, valueWidth))
+                .append("\n").append(summaryTextRow("Кол-во продаж", String.valueOf(salesCount), labelWidth, valueWidth))
+                .append("\n").append(summaryTextRow("Грязная прибыль", formatNumber(totals.grossProfit), labelWidth, valueWidth))
+                .append("\n").append(summaryTextRow("Чистая выручка", formatNumber(totals.netProfit), labelWidth, valueWidth))
+                .append("\n").append(summaryTextRow("Зарплата продавца", formatNumber(totals.sellerSalary), labelWidth, valueWidth))
+                .append("\n").append(summaryTextRow("Остаток после з/п продавца", formatNumber(totals.ownerRemainder), labelWidth, valueWidth))
+                .append("\n").append(border);
+    }
+
+    private void appendSalesTextTable(StringBuilder text, JSONObject shift, JSONArray sales) {
+        int timeWidth = 13;
+        int nameWidth = 20;
+        int purchaseWidth = 8;
+        int retailWidth = 8;
+        int profitWidth = 8;
+        String border = "+" + repeat("-", timeWidth + 2)
+                + "+" + repeat("-", nameWidth + 2)
+                + "+" + repeat("-", purchaseWidth + 2)
+                + "+" + repeat("-", retailWidth + 2)
+                + "+" + repeat("-", profitWidth + 2) + "+";
+
+        text.append(border)
+                .append("\n| ").append(center("Журнал продаж", timeWidth + nameWidth + purchaseWidth + retailWidth + profitWidth + 13)).append(" |")
+                .append("\n").append(border)
+                .append("\n| ").append(padRight("Дата:", timeWidth)).append(" | ")
+                .append(padRight(shift.optString("date", ""), nameWidth + purchaseWidth + retailWidth + profitWidth + 9)).append(" |")
+                .append("\n").append(border)
+                .append("\n| ").append(padRight("Время продажи", timeWidth))
+                .append(" | ").append(padRight("Наименование", nameWidth))
+                .append(" | ").append(padRight("Закуп", purchaseWidth))
+                .append(" | ").append(padRight("Розница", retailWidth))
+                .append(" | ").append(padRight("Прибыль", profitWidth))
+                .append(" |")
+                .append("\n").append(border);
+
+        if (sales == null || sales.length() == 0) {
+            text.append("\n| ").append(center("Продаж нет", timeWidth + nameWidth + purchaseWidth + retailWidth + profitWidth + 13)).append(" |")
+                    .append("\n").append(border);
+            return;
+        }
+
+        for (int j = 0; j < sales.length(); j++) {
+            JSONObject sale = sales.optJSONObject(j);
+            if (sale == null) continue;
+            text.append("\n| ").append(padRight(sale.optString("time", ""), timeWidth))
+                    .append(" | ").append(padRight(sale.optString("name", ""), nameWidth))
+                    .append(" | ").append(padLeft(formatNumber(sale.optDouble("purchase", 0)), purchaseWidth))
+                    .append(" | ").append(padLeft(formatNumber(sale.optDouble("sale", 0)), retailWidth))
+                    .append(" | ").append(padLeft(formatNumber(sale.optDouble("profit", 0)), profitWidth))
+                    .append(" |");
+        }
+        text.append("\n").append(border);
+    }
+
+    private String summaryTextRow(String label, String value, int labelWidth, int valueWidth) {
+        return "| " + padRight(label, labelWidth) + " | " + padLeft(value, valueWidth) + " |";
     }
 
     private String cell(String value) {
@@ -645,6 +687,42 @@ public class MainActivity extends Activity {
             return String.valueOf((long) value);
         }
         return String.valueOf(value);
+    }
+
+    private String repeat(String value, int count) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            builder.append(value);
+        }
+        return builder.toString();
+    }
+
+    private String center(String value, int width) {
+        String text = fit(value, width);
+        int left = (width - text.length()) / 2;
+        int right = width - text.length() - left;
+        return repeat(" ", left) + text + repeat(" ", right);
+    }
+
+    private String padRight(String value, int width) {
+        String text = fit(value, width);
+        return text + repeat(" ", width - text.length());
+    }
+
+    private String padLeft(String value, int width) {
+        String text = fit(value, width);
+        return repeat(" ", width - text.length()) + text;
+    }
+
+    private String fit(String value, int width) {
+        String text = value == null ? "" : value;
+        if (text.length() <= width) {
+            return text;
+        }
+        if (width <= 1) {
+            return text.substring(0, width);
+        }
+        return text.substring(0, width - 1) + ".";
     }
 
     private TextView label(String text, int sp, boolean bold) {
