@@ -1,6 +1,7 @@
 package com.example.salesprofit;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -30,7 +31,9 @@ import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "sales_profit_prefs";
@@ -45,6 +48,7 @@ public class MainActivity extends Activity {
     private JSONArray shifts;
     private JSONObject currentShift;
     private int editingSaleIndex = -1;
+    private final Set<String> expandedJournalShifts = new HashSet<>();
 
     private TextView shiftTitle;
     private TextView statusText;
@@ -63,6 +67,7 @@ public class MainActivity extends Activity {
     private Button reopenButton;
     private Button exportButton;
     private Button telegramButton;
+    private Button clearHistoryButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -146,6 +151,9 @@ public class MainActivity extends Activity {
 
         LinearLayout journal = section();
         journal.addView(label("Журнал смен", 20, true));
+        clearHistoryButton = button("Очистить всю историю", Color.rgb(185, 28, 28));
+        clearHistoryButton.setOnClickListener(v -> confirmClearHistory());
+        journal.addView(clearHistoryButton);
         journalList = new LinearLayout(this);
         journalList.setOrientation(LinearLayout.VERTICAL);
         journal.addView(journalList);
@@ -360,6 +368,64 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void confirmClearHistory() {
+        new AlertDialog.Builder(this)
+                .setTitle("Очистить всю историю?")
+                .setMessage("Будут удалены все продажи и все смены. Это действие нельзя отменить.")
+                .setPositiveButton("Удалить", (dialog, which) -> clearAllHistory())
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void clearAllHistory() {
+        shifts = new JSONArray();
+        expandedJournalShifts.clear();
+        editingSaleIndex = -1;
+        ensureTodayShift();
+        saveData();
+        clearSaleForm();
+        render();
+        show("История очищена");
+    }
+
+    private void confirmDeleteShift(int shiftIndex) {
+        JSONObject shift = shifts.optJSONObject(shiftIndex);
+        String date = shift == null ? "" : shift.optString("date", "");
+        new AlertDialog.Builder(this)
+                .setTitle("Удалить смену?")
+                .setMessage("Смена " + date + " и все продажи внутри нее будут удалены. Это действие нельзя отменить.")
+                .setPositiveButton("Удалить", (dialog, which) -> deleteShift(shiftIndex))
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void deleteShift(int shiftIndex) {
+        JSONObject removed = shifts.optJSONObject(shiftIndex);
+        String removedDate = removed == null ? "" : removed.optString("date", "");
+        if (shiftIndex < 0 || shiftIndex >= shifts.length()) {
+            show("Смена не найдена");
+            return;
+        }
+
+        shifts.remove(shiftIndex);
+        expandedJournalShifts.remove(removedDate);
+        editingSaleIndex = -1;
+        ensureTodayShift();
+        saveData();
+        clearSaleForm();
+        render();
+        show("Смена удалена");
+    }
+
+    private void toggleJournalShift(String date) {
+        if (expandedJournalShifts.contains(date)) {
+            expandedJournalShifts.remove(date);
+        } else {
+            expandedJournalShifts.add(date);
+        }
+        renderJournal();
+    }
+
     private void render() {
         String date = currentShift.optString("date", today());
         boolean closed = currentShift.optBoolean("closed", false);
@@ -380,6 +446,7 @@ public class MainActivity extends Activity {
         reopenButton.setEnabled(closed);
         exportButton.setEnabled(shifts.length() > 0);
         telegramButton.setEnabled(shifts.length() > 0);
+        clearHistoryButton.setEnabled(shifts.length() > 0);
         addSaleHint.setVisibility(!closed && !rentSet ? View.VISIBLE : View.GONE);
 
         String totalMessage = "Прибыль продаж: " + money(totals.grossProfit)
@@ -431,15 +498,7 @@ public class MainActivity extends Activity {
             Totals totals = calculateTotals(shift, rent);
             JSONArray sales = shift.optJSONArray("sales");
             int salesCount = sales == null ? 0 : sales.length();
-            journalList.addView(row(
-                    "Дата смены: " + shift.optString("date", ""),
-                    "Аренда: " + (isRentSet(shift) ? money(rent) : "не сохранена")
-                            + "\nКол-во продаж: " + salesCount
-                            + "\nГрязная прибыль: " + money(totals.grossProfit)
-                            + "\nЧистая выручка: " + money(totals.netProfit)
-                            + "\nЗарплата продавца: " + money(totals.sellerSalary)
-                            + "\nОстаток после з/п продавца: " + money(totals.ownerRemainder)
-            ));
+            journalList.addView(journalShiftView(i, shift, sales, salesCount, rent, totals));
         }
     }
 
@@ -755,6 +814,64 @@ public class MainActivity extends Activity {
         subtitleView.setTextColor(Color.rgb(71, 85, 105));
         layout.addView(titleView);
         layout.addView(subtitleView);
+        return layout;
+    }
+
+    private View journalShiftView(int shiftIndex, JSONObject shift, JSONArray sales, int salesCount, double rent, Totals totals) {
+        String date = shift.optString("date", "");
+        boolean expanded = expandedJournalShifts.contains(date);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(0, dp(10), 0, dp(10));
+
+        TextView titleView = label("Дата смены: " + date, 16, true);
+        TextView summaryView = label(
+                "Аренда: " + (isRentSet(shift) ? money(rent) : "не сохранена")
+                        + "\nКол-во продаж: " + salesCount
+                        + "\nГрязная прибыль: " + money(totals.grossProfit)
+                        + "\nЧистая выручка: " + money(totals.netProfit)
+                        + "\nЗарплата продавца: " + money(totals.sellerSalary)
+                        + "\nОстаток после з/п продавца: " + money(totals.ownerRemainder),
+                14,
+                false
+        );
+        summaryView.setTextColor(Color.rgb(71, 85, 105));
+
+        Button toggleButton = button(expanded ? "Скрыть продажи" : "Показать продажи", Color.rgb(37, 99, 235));
+        toggleButton.setOnClickListener(v -> toggleJournalShift(date));
+
+        layout.addView(titleView);
+        layout.addView(summaryView);
+        layout.addView(toggleButton);
+
+        if (expanded) {
+            LinearLayout salesContainer = new LinearLayout(this);
+            salesContainer.setOrientation(LinearLayout.VERTICAL);
+            salesContainer.setPadding(dp(10), dp(8), dp(10), dp(8));
+            salesContainer.setBackgroundColor(Color.rgb(248, 250, 252));
+
+            if (sales == null || sales.length() == 0) {
+                salesContainer.addView(muted("Продаж нет"));
+            } else {
+                for (int i = 0; i < sales.length(); i++) {
+                    JSONObject sale = sales.optJSONObject(i);
+                    if (sale == null) continue;
+                    salesContainer.addView(row(
+                            sale.optString("time", "") + "  " + sale.optString("name", ""),
+                            "Закуп: " + money(sale.optDouble("purchase"))
+                                    + " | Розница: " + money(sale.optDouble("sale"))
+                                    + " | Прибыль: " + money(sale.optDouble("profit"))
+                    ));
+                }
+            }
+            layout.addView(salesContainer);
+        }
+
+        Button deleteButton = button("Удалить смену", Color.rgb(185, 28, 28));
+        deleteButton.setOnClickListener(v -> confirmDeleteShift(shiftIndex));
+        layout.addView(deleteButton);
+
         return layout;
     }
 
