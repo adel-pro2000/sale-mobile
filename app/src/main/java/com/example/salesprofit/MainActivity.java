@@ -10,6 +10,7 @@ import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.StyleSpan;
+import android.text.style.UnderlineSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -561,7 +562,7 @@ public class MainActivity extends Activity {
             appendStyled(text, "Итоги смены от " + shift.optString("date", ""), android.graphics.Typeface.BOLD);
             text.append("\n\nДата смены: ").append(shift.optString("date", ""))
                     .append("\nАренда: ").append(isRentSet(shift) ? formatNumber(rent) : "не сохранена")
-                    .append("\nКол-во продаж: ").append(salesCount)
+                    .append("\nКол-во продаж: ").append(String.valueOf(salesCount))
                     .append("\nГрязная прибыль: ").append(formatNumber(totals.grossProfit))
                     .append("\nЧистая выручка: ").append(formatNumber(totals.netProfit))
                     .append("\nЗарплата продавца: ").append(formatNumber(totals.sellerSalary))
@@ -569,7 +570,7 @@ public class MainActivity extends Activity {
                     .append("\n\nЖурнал продаж:\n\n");
             appendStyled(text, "Дата: " + shift.optString("date", ""), android.graphics.Typeface.BOLD);
             text.append("\nвремя продажи | наименование | закуп | розница | ");
-            appendStyled(text, "прибыль", android.graphics.Typeface.ITALIC);
+            appendUnderlined(text, "прибыль");
 
             if (sales == null || sales.length() == 0) {
                 text.append("\nПродаж нет");
@@ -588,7 +589,7 @@ public class MainActivity extends Activity {
                         .append(" | ")
                         .append(formatNumber(sale.optDouble("sale", 0)))
                         .append(" | ");
-                appendStyled(text, formatNumber(sale.optDouble("profit", 0)), android.graphics.Typeface.ITALIC);
+                appendUnderlined(text, formatNumber(sale.optDouble("profit", 0)));
             }
         }
 
@@ -599,6 +600,12 @@ public class MainActivity extends Activity {
         int start = text.length();
         text.append(value);
         text.setSpan(new StyleSpan(style), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private void appendUnderlined(SpannableStringBuilder text, String value) {
+        int start = text.length();
+        text.append(value);
+        text.setSpan(new UnderlineSpan(), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private String cell(String value) {
