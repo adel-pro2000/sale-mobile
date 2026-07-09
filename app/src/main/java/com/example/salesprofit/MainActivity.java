@@ -7,6 +7,9 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -540,8 +543,8 @@ public class MainActivity extends Activity {
                 .append("</tr>");
     }
 
-    private String buildJournalText() {
-        StringBuilder text = new StringBuilder();
+    private CharSequence buildJournalText() {
+        SpannableStringBuilder text = new SpannableStringBuilder();
 
         for (int i = 0; i < shifts.length(); i++) {
             JSONObject shift = shifts.optJSONObject(i);
@@ -555,17 +558,18 @@ public class MainActivity extends Activity {
                 text.append("\n\n");
             }
 
-            text.append("Итоги смены от ").append(shift.optString("date", ""))
-                    .append("\n\nДата смены: ").append(shift.optString("date", ""))
+            appendStyled(text, "Итоги смены от " + shift.optString("date", ""), android.graphics.Typeface.BOLD);
+            text.append("\n\nДата смены: ").append(shift.optString("date", ""))
                     .append("\nАренда: ").append(isRentSet(shift) ? formatNumber(rent) : "не сохранена")
                     .append("\nКол-во продаж: ").append(salesCount)
                     .append("\nГрязная прибыль: ").append(formatNumber(totals.grossProfit))
                     .append("\nЧистая выручка: ").append(formatNumber(totals.netProfit))
                     .append("\nЗарплата продавца: ").append(formatNumber(totals.sellerSalary))
                     .append("\nОстаток после з/п продавца: ").append(formatNumber(totals.ownerRemainder))
-                    .append("\n\nЖурнал продаж:")
-                    .append("\n\nДата: ").append(shift.optString("date", ""))
-                    .append("\nвремя продажи | наименование | закуп | розница | прибыль");
+                    .append("\n\nЖурнал продаж:\n\n");
+            appendStyled(text, "Дата: " + shift.optString("date", ""), android.graphics.Typeface.BOLD);
+            text.append("\nвремя продажи | наименование | закуп | розница | ");
+            appendStyled(text, "прибыль", android.graphics.Typeface.ITALIC);
 
             if (sales == null || sales.length() == 0) {
                 text.append("\nПродаж нет");
@@ -583,12 +587,18 @@ public class MainActivity extends Activity {
                         .append(formatNumber(sale.optDouble("purchase", 0)))
                         .append(" | ")
                         .append(formatNumber(sale.optDouble("sale", 0)))
-                        .append(" | ")
-                        .append(formatNumber(sale.optDouble("profit", 0)));
+                        .append(" | ");
+                appendStyled(text, formatNumber(sale.optDouble("profit", 0)), android.graphics.Typeface.ITALIC);
             }
         }
 
-        return text.toString();
+        return text;
+    }
+
+    private void appendStyled(SpannableStringBuilder text, String value, int style) {
+        int start = text.length();
+        text.append(value);
+        text.setSpan(new StyleSpan(style), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private String cell(String value) {
