@@ -273,6 +273,7 @@ public class MainActivity extends Activity {
             currentShift.put("grossProfit", totals.grossProfit);
             currentShift.put("netProfit", totals.netProfit);
             currentShift.put("sellerSalary", totals.sellerSalary);
+            currentShift.put("ownerRemainder", totals.ownerRemainder);
             currentShift.put("closed", true);
             currentShift.put("closedAt", new SimpleDateFormat("dd.MM.yyyy HH:mm", ruLocale).format(new Date()));
             saveData();
@@ -295,6 +296,7 @@ public class MainActivity extends Activity {
             currentShift.remove("grossProfit");
             currentShift.remove("netProfit");
             currentShift.remove("sellerSalary");
+            currentShift.remove("ownerRemainder");
             saveData();
             render();
             show("Смена открыта обратно");
@@ -359,7 +361,8 @@ public class MainActivity extends Activity {
         String totalMessage = "Прибыль продаж: " + money(totals.grossProfit)
                 + "\nАренда: " + (rentSet ? money(rent) : "не сохранена")
                 + "\nИтог после аренды: " + money(totals.netProfit)
-                + "\nЗарплата продавца 60%: " + money(totals.sellerSalary);
+                + "\nЗарплата продавца 60%: " + money(totals.sellerSalary)
+                + "\nОстаток после з/п продавца: " + money(totals.ownerRemainder);
         if (closed) {
             totalMessage += "\nЗакрыта: " + currentShift.optString("closedAt", "");
         }
@@ -402,15 +405,16 @@ public class MainActivity extends Activity {
             if (shift == null) continue;
             double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
             Totals totals = calculateTotals(shift, rent);
-            String status = shift.optBoolean("closed", false) ? "закрыта" : "открыта";
             JSONArray sales = shift.optJSONArray("sales");
             int salesCount = sales == null ? 0 : sales.length();
             journalList.addView(row(
-                    shift.optString("date") + " - " + status,
-                    "Продаж: " + salesCount
-                            + " | Прибыль: " + money(totals.grossProfit)
-                            + " | Аренда: " + (isRentSet(shift) ? money(rent) : "не сохранена")
-                            + " | Зарплата: " + money(totals.sellerSalary)
+                    "Дата смены: " + shift.optString("date", ""),
+                    "Аренда: " + (isRentSet(shift) ? money(rent) : "не сохранена")
+                            + "\nКол-во продаж: " + salesCount
+                            + "\nГрязная прибыль: " + money(totals.grossProfit)
+                            + "\nЧистая выручка: " + money(totals.netProfit)
+                            + "\nЗарплата продавца: " + money(totals.sellerSalary)
+                            + "\nОстаток после з/п продавца: " + money(totals.ownerRemainder)
             ));
         }
     }
@@ -468,20 +472,24 @@ public class MainActivity extends Activity {
                 .append("<th>Цена продажи</th>")
                 .append("<th>Прибыль</th>")
                 .append("<th>Аренда смены</th>")
+                .append("<th>Кол-во продаж</th>")
+                .append("<th>Грязная прибыль</th>")
                 .append("<th>Итог после аренды</th>")
                 .append("<th>Зарплата продавца 60%</th>")
+                .append("<th>Остаток после з/п продавца</th>")
                 .append("</tr>");
 
         for (int i = 0; i < shifts.length(); i++) {
             JSONObject shift = shifts.optJSONObject(i);
             if (shift == null) continue;
             JSONArray sales = shift.optJSONArray("sales");
+            int salesCount = sales == null ? 0 : sales.length();
             double rent = isRentSet(shift) ? shift.optDouble("rent", 0) : 0;
             Totals totals = calculateTotals(shift, rent);
             String status = shift.optBoolean("closed", false) ? "закрыта" : "открыта";
 
             if (sales == null || sales.length() == 0) {
-                appendExcelRow(html, shift, status, "", "", 0, 0, 0, rent, totals);
+                appendExcelRow(html, shift, status, "", "", 0, 0, 0, rent, salesCount, totals);
                 continue;
             }
 
@@ -498,6 +506,7 @@ public class MainActivity extends Activity {
                         sale.optDouble("sale", 0),
                         sale.optDouble("profit", 0),
                         rent,
+                        salesCount,
                         totals
                 );
             }
@@ -508,7 +517,7 @@ public class MainActivity extends Activity {
     }
 
     private void appendExcelRow(StringBuilder html, JSONObject shift, String status, String time, String name,
-                                double purchase, double sale, double profit, double rent, Totals totals) {
+                                double purchase, double sale, double profit, double rent, int salesCount, Totals totals) {
         html.append("<tr>")
                 .append(cell(shift.optString("date", "")))
                 .append(cell(status))
@@ -518,8 +527,11 @@ public class MainActivity extends Activity {
                 .append(cell(formatNumber(sale)))
                 .append(cell(formatNumber(profit)))
                 .append(cell(isRentSet(shift) ? formatNumber(rent) : "не сохранена"))
+                .append(cell(String.valueOf(salesCount)))
+                .append(cell(formatNumber(totals.grossProfit)))
                 .append(cell(formatNumber(totals.netProfit)))
                 .append(cell(formatNumber(totals.sellerSalary)))
+                .append(cell(formatNumber(totals.ownerRemainder)))
                 .append("</tr>");
     }
 
@@ -547,7 +559,8 @@ public class MainActivity extends Activity {
             }
         }
         double net = gross - rent;
-        return new Totals(gross, net, net * SELLER_PERCENT);
+        double sellerSalary = net * SELLER_PERCENT;
+        return new Totals(gross, net, sellerSalary, net - sellerSalary);
     }
 
     private Double parseMoney(EditText input) {
@@ -704,11 +717,13 @@ public class MainActivity extends Activity {
         final double grossProfit;
         final double netProfit;
         final double sellerSalary;
+        final double ownerRemainder;
 
-        Totals(double grossProfit, double netProfit, double sellerSalary) {
+        Totals(double grossProfit, double netProfit, double sellerSalary, double ownerRemainder) {
             this.grossProfit = grossProfit;
             this.netProfit = netProfit;
             this.sellerSalary = sellerSalary;
+            this.ownerRemainder = ownerRemainder;
         }
     }
 }
