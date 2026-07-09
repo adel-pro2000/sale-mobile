@@ -151,10 +151,6 @@ public class MainActivity extends Activity {
             show("Смена уже закрыта");
             return;
         }
-        if (isRentSet(currentShift)) {
-            show("Аренда уже сохранена для этой смены");
-            return;
-        }
 
         Double rent = parseMoney(rentInput);
         if (rent == null) {
@@ -163,11 +159,12 @@ public class MainActivity extends Activity {
         }
 
         try {
+            boolean updating = isRentSet(currentShift);
             currentShift.put("rent", rent);
             currentShift.put("rentSet", true);
             saveData();
             render();
-            show("Аренда сохранена");
+            show(updating ? "Аренда изменена" : "Аренда сохранена");
         } catch (JSONException e) {
             show("Не удалось сохранить аренду");
         }
@@ -348,8 +345,9 @@ public class MainActivity extends Activity {
         shiftTitle.setText("Смена: " + date);
         statusText.setText(closed ? "Статус: закрыта" : "Статус: открыта");
         rentInput.setText(rentSet ? formatPlain(rent) : "");
-        rentInput.setEnabled(!closed && !rentSet);
-        saveRentButton.setEnabled(!closed && !rentSet);
+        rentInput.setEnabled(!closed);
+        saveRentButton.setEnabled(!closed);
+        saveRentButton.setText(rentSet ? "Сохранить изменение аренды" : "Сохранить аренду");
         addButton.setEnabled(!closed && rentSet);
         addButton.setText(editingSaleIndex >= 0 ? "Сохранить изменения" : "Добавить продажу");
         cancelEditButton.setVisibility(editingSaleIndex >= 0 ? View.VISIBLE : View.GONE);
